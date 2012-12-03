@@ -1,0 +1,186 @@
+#!/usr/bin/ruby1.9.1
+require 'socket'
+require 'timeout'
+require 'digest/sha1'
+require './erno.rb'
+
+PORT = 2012
+TIMEOUT_CONNECT = 20
+TIMEOUT_SOCKET = 5
+DEBUG=false
+#DEBUG = true
+
+ERROR = [
+	"Could not connect to service.",
+	"Connection error.",
+	"Protocol error."
+]
+
+EXIT = {
+	:ok => 0,
+	:down => 1,
+	:broken => 2,
+	:error => 3,
+}
+
+if ARGV.length != 3 or (ARGV[0] != "get" and ARGV[0] != "put")
+	puts "Usage: #{$0} <put/get> <ip> <flag>"
+	exit EXIT[:error]
+end
+
+method = ARGV[0]
+host = ARGV[1]
+flag = ARGV[2]
+
+def random_from_flag(flag)
+	h = Digest::SHA1.digest("some seed, not important... " + flag)
+	h[0] = "x" if h[0].ord == 0
+	h[-1] = "x" if h[-1].ord == 0
+	return h
+end
+
+def send(s, m)
+	begin
+		s.puts m
+		puts "CLIENT: #{m.inspect}" if DEBUG
+	rescue => errormsg
+		# Connection error
+		puts ERROR[1] + " socket write() failed."
+		STDERR.puts "send(s, #{m.inspect}) exception"
+		STDERR.puts errormsg.inspect
+		exit EXIT[:broken]
+	end
+end
+
+def read(s)
+	begin
+		l = nil
+		begin
+			Timeout::timeout(TIMEOUT_SOCKET) do
+				l = s.gets
+			end
+		rescue Timeout::Error
+			puts ERROR[1] + " socket read() timed out."
+			exit EXIT[:broken]
+		end
+		if l == nil then
+			puts ERROR[1] + " socket read() failed."
+			STDERR.puts "read() returned nil"
+			exit EXIT[:broken]
+		end
+		puts "SERVER: #{l.chomp.inspect}" if DEBUG
+	rescue => errormsg
+		puts ERROR[1] + " socket read() failed."
+		STDERR.puts "read() exception"
+		STDERR.puts errormsg.inspect
+		exit EXIT[:broken]
+	end
+	return l.chomp
+end
+
+# Verbindung aufbauen
+begin
+	s = nil
+	Timeout::timeout(TIMEOUT_CONNECT) do
+		s = TCPSocket.open(host, PORT)
+	end
+rescue Timeout::Error
+	puts ERROR[0] + " Connect timed out."
+	exit EXIT[:down]
+rescue => errormsg
+	puts ERROR[0] + " Connection failed."
+	STDERR.puts errormsg.inspect
+	exit EXIT[:down]
+end
+
+# Header lesen
+line = read(s)
+unless /^Welcome to Erno/.match(line)
+	puts ERROR[2] + " Cannot recognize this service."
+	STDERR.puts "Invalid banner: #{line.inspect}"
+	exit EXIT[:broken]
+end
+puts " CHECK: header okay." if DEBUG
+
+if method == "put"
+	
+	preimage = random_from_flag(flag)
+	h = Cayley.hash(preimage).to_s(16)
+
+	send(s, "put #{h} #{flag}")
+	line = read(s)
+	if line != "Okay."
+		puts ERROR[2] + " Unexpected response."
+		STDERR.puts "Preimage: #{preimage.inspect}"
+		STDERR.puts "Hash: #{h}"
+		STDERR.puts 'Expected: "Okay."'
+		STDERR.puts "Got: #{line.inspect}"
+		exit EXIT[:broken]
+	end
+
+	puts " CHECK: \"put\" command okay." if DEBUG
+	puts "OK"
+	exit EXIT[:ok]
+
+elsif method == "get"
+
+	preimage = random_from_flag(flag)
+	hash = Cayley.hash(preimage).to_s(16)
+	preimage = preimage.unpack("C*").map{ |i| "%02x" % i }.join
+
+	# Funktioniert "list" command?
+	# (Es muss unsere Flagge enthalten.)
+	send(s, "list")
+	line = read(s)
+	unless matches = /^(\d+) items in database:/.match(line)
+		puts ERROR[2] + " Unexpected response."
+		STDERR.puts "Expected: list header."
+		STDERR.puts "Got: #{line.inspect}"
+		exit EXIT[:broken]
+	end
+	if (numitems = matches[1].to_i) == 0
+		puts ERROR[2] + " Cloud storage empty?"
+		exit EXIT[:broken]
+	end
+	foundid = false
+	numitems.times do |i|
+		line = read(s)
+		foundid = true if line == hash
+	end
+	if foundid == false
+		puts ERROR[2] + " Flag gone?"
+		exit EXIT[:broken]
+	end
+	puts " CHECK: \"list\" command okay." if DEBUG
+
+	# Funktioniert "get" command?
+	send(s, "get #{preimage}")
+	line = read(s)
+	if line != flag then
+		puts ERROR[2] + " Flag gone?"
+		STDERR.puts "Preimage: #{preimage.inspect}"
+		STDERR.puts "Expected: #{flag.inspect}"
+		STDERR.puts "Got: #{line.inspect}"
+		exit EXIT[:broken]
+	end
+	puts " CHECK: \"get\" command okay." if DEBUG
+
+	# Funktioniert "delete" command?
+	# (d.h. gibt es "Okay." zurück? Ob die Flagge wirklich gelöscht wird, ist egal)
+	send(s, "delete #{preimage}")
+	line = read(s)
+	if line != "Okay."
+		puts ERROR[2]
+		STDERR.puts 'Expected: "Okay."'
+		STDERR.puts "Got: #{line.inspect}"
+		exit EXIT[:broken]
+	end
+	puts " CHECK: \"delete\" command okay." if DEBUG
+
+	puts "OK"
+	exit EXIT[:ok]
+
+end
+
+puts "Something went wrong."
+exit EXIT[:error]

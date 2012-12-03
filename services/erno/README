@@ -1,0 +1,13 @@
+erno
+====
+
+Rubik's cube ctf service in Haskell.
+
+The Rubik's cube, which can be seen as a subgroup of the group
+of permutations on 48 elements (= stickers), can be used as a
+cayley hash function by mapping inputs to cube states ("scrambles").
+
+This hash function is used for a Lamport one-time authentication
+signature scheme.
+
+Finding pre-images is equivalent to solving a Rubik's cube.
