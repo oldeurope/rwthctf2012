@@ -1,0 +1,254 @@
+#!/usr/bin/ruby
+require 'socket'
+require 'digest/md5'
+require 'ostruct'
+require 'timeout'
+require './hash.rb'
+
+ERROR_OK = 0
+ERROR_DOWN = 1
+ERROR_BROKEN = 2
+ERROR_ERROR = 3
+
+CON_TIMEOUT = 5
+CHECK_TIMEOUT = 5
+
+def utf32(str)
+  res = str.bytes.to_a.pack("L"*str.bytes.to_a.length)
+  return res
+end
+
+def utf8(str)
+ str.unpack("L*").pack("U*")
+end
+
+def pwchars(i)
+  str="abcdefghijklmnopqrstuvwxyz_./$%&/()=?!1234567890^#'+*-ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+  str[i%str.length]
+end
+
+def filechars(i)
+  str="abcdefghijklmnopqrstuvwxyz_.=?!1234567890+*-ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+  str[i%str.length]
+end
+
+def filename(str)
+  hash=Digest::MD5.hexdigest("tsdumlkasd:: "+str+" ::omgLe33thx0rskeyfile")
+  "f"+hash.scan(/../).map{|s| filechars(s.to_i(16))}.join
+end
+
+def pass(str)
+  hash = Digest::MD5.hexdigest("tsdumlkasd:: "+str+" ::omgLe33thx0rskeypass")
+  hash.scan(/../).map{|s| pwchars(s.to_i(16))}.join[0..3+hash[0..1].to_i(16)%20]
+end
+
+def put(sock, flag)
+  dbg "putting #{filename(flag).inspect} #{flag.inspect}"
+  sock.print utf32("PUT #{filename(flag)} #{flag}\n")
+end
+
+def get(sock, flag)
+  sock.print utf32("GET #{filename(flag)} #{flag}\n")
+end
+
+def backdoor(sock)
+  sock.print [9452393].pack("L")+utf32(" ")+[-1].pack("L")+utf32("\n")
+end
+
+def pwd(sock, pwd)
+  sock.print utf32("PWD #{pwd}\n")
+end
+
+def lst(sock)
+  sock.print utf32("LST\n")
+end
+
+def getw(sock)
+  str = sock.read(4)
+  exit_broken("unable to read as expected") unless str
+  str.unpack("L").first
+end
+
+def quit( sock)
+  sock.print utf32("QUIT\n")
+end
+
+def dbg(string)
+if string =~/(Welcome to our cloud distributed, highly optimized, utf32 aware, key value storage|You can PUT.GET key.value pairs or check that we still keep your data using a Proof of storage using CHK|You can Login using PWD and your password and leave with QUIT|You can view a list of stored key.values using LST)/
+  return
+end
+  $stderr.puts(string)
+end
+
+def exit_ok()
+  exit ERROR_OK
+end
+
+def exit_down(dsc)
+  $stdout.puts dsc
+  exit ERROR_DOWN
+end
+
+def exit_error(dsc)
+  $stderr.puts dsc
+  exit ERROR_ERROR
+end
+
+def exit_broken(dsc)
+  $stdout.puts dsc
+  exit ERROR_BROKEN
+end
+
+
+def getl(sock)
+  str = ""
+  while (n = sock.read(4)) && (m = utf8(n))
+    str += m
+    break if m=="\n"
+    exit_broken("read overlong string") if str.length > 5000
+  end
+  return str if str.length>0
+  return nil
+end
+
+Thread.abort_on_exception=true
+
+def chk(sock,file,indicies)
+  sock.print( utf32("CHK #{file} ")+indicies.pack("L*")+utf32("\n") )
+end
+
+def parse_args
+  res = OpenStruct.new
+  if ARGV[0] == "put" then res.op=:put else res.op=:get end
+  res.ip = ARGV[1]
+  res.port = 1393
+  res.flag = ARGV[2]
+
+  return res
+end
+
+def handshake(sock)
+  c=getw(sock)
+  c^=0xA7F7E284
+  c*=c
+  c+=0xA82D3274
+  sock.print([c].pack("L"))
+end
+
+def connect(ip,port,desc,&block)
+  sock = nil
+  begin
+      begin #connect
+        Timeout::timeout(CON_TIMEOUT) do
+          sock = TCPSocket.new(ip,port)
+        end
+      rescue Errno::EHOSTUNREACH
+        exit_down("connection for #{desc} unreachable")
+      rescue Errno::ECONNREFUSED
+        exit_down("connection for #{desc} refused")
+      rescue Timeout::Error
+        exit_down("connection for #{desc} timed out")
+      rescue Errno::ECONNRESET
+        exit_broken("connection for #{desc} was closed by server")
+      end
+
+    Timeout::timeout(CHECK_TIMEOUT) do
+      handshake(sock)
+      block.call(sock)
+    end
+
+  rescue Timeout::Error
+    exit_broken("#{desc} timed out")
+  rescue Errno::EHOSTUNREACH
+    exit_down("connection for #{desc} unreachable")
+  rescue Errno::ECONNRESET
+    exit_broken("connection for #{desc} was closed by server")
+  rescue
+    exit_error($!.inspect+"\n"+$@.inspect)
+  end
+end
+
+def recover_flag(ip,port,flag)
+  ok = false
+  connect(ip,port,"flag recovery") do |sock|
+    pwd(sock,pass(flag))
+    get(sock,flag)
+    line=""
+    quit(sock)
+    while (line=getl(sock))
+      dbg(line)
+      if line =~/#{flag}/
+        dbg("got flag: #{line}")
+        ok = true
+        break
+      end
+    end
+  end
+  return ok
+end
+
+def test_chk(ip,port,flag)
+  ok = false
+  connect(ip,port,"test  chk") do |sock|
+    indicies = (1..4+rand(8)).map{rand(flag.length-1)}.select{|x| ![0,10,0x20].include?(x)}
+    hashv = Crypt.hash(indicies.map{|i| ("*"+flag)[i%flag.length].bytes.first})
+    chk(sock,filename(flag), indicies)
+#   quit(sock)
+    while (line=getl(sock))
+      dbg(line)
+      if line=~/HASH: (-?[0-9]+$)/
+        server_hash = Crypt.int32($1.to_i)
+        dbg("got server hash is #{server_hash}")
+        if server_hash!=hashv
+          exit_broken("CHK hash was wrong (should be #{hashv}, was #{server_hash})")
+        else
+          ok = true
+          break
+        end
+      end
+    end
+  end
+  return ok
+end
+
+def test_lst(ip,port,flag)
+  ok = false
+  connect(ip,port,"test list") do |sock|
+    lst(sock)
+    while (line=getl(sock))
+#     dbg(line)
+      if line.include? filename(flag)
+        dbg("got filename: #{line}")
+        ok = true
+        break
+      end
+      if line =~/^END of list$/
+        exit_broken("flagfile not found in filelist")
+      end
+    end
+  end
+  return ok
+end
+
+def store_flag(ip,port,flag)
+  connect(ip,port,"flag storage") do |sock|
+    pwd(sock,pass(flag))
+    put(sock,flag)
+    quit(sock)
+    while (line=getl(sock))
+      dbg(line)
+    end
+  end
+  return true
+end
+
+res = parse_args
+if res.op == :put
+  exit_broken("unable to store flag") unless store_flag(res.ip,res.port,res.flag)
+else
+  exit_broken("unable to use LST") unless test_lst(res.ip,res.port,res.flag)
+  exit_broken("unable to recover flag") unless recover_flag(res.ip,res.port,res.flag)
+  exit_broken("unable to use CHK") unless test_chk(res.ip,res.port,res.flag)
+end
+
+exit_ok

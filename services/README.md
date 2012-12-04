@@ -1,6 +1,7 @@
 Services
 ========
 
+* azurecoast: Cornelius Aschermann (cornelius.aschermann@rwth-aachen.de)
 * erno: Florian Weingarten (flo@hackvalue.de)
 * rainbow: Florian (More)
 * rfs: Phillip Keldenich (keldenich@embedded.rwth-aachen.de)
