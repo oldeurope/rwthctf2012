@@ -1,0 +1,80 @@
+The rpg service is a telnet based service
+that reminds of old mutli user dungeon (MUD)
+adventure games. It requires a telnet protocol
+handshake to enable telnet echo back mode for
+typed characters and negotiates about the terminal
+window size. Afterwards it makes heavy use of VT100
+control sequences to draw the gameboard.
+Unfortunately, the standard telnet client does not
+recognize the telnet protocol on nonstandard ports.
+Thus, one has to start telnet without parameters
+and then enter "open <host> -8080" in order to
+force the client to assume a telnet server on
+the port on which the client is listening.
+
+The following part contains a very brief
+description of the major ideas of the service.
+If you want to have more information, you have
+to look at the source itself.
+
+The service uses several NPCs to interact
+with the user and/or the checker.
+* Librarian:
+ The core component. The librarian can store
+ and retrieve "publications". It is used as a
+ key-value-store for flags. The flags are stored
+ as values. Keys are generated from hashing the
+ flags.
+* Parrot:
+ A simple echo service. Unfortunately the echo is
+ implemented via an snprintf(input). So it is
+ vulnerable to formatstring attacks. Its
+ presence is required by the gameserver.
+ However, you should fix the format vuln.
+* Honet Achmet:
+ NPC that sells you the keys of the kv-store for
+ 10 gold coins. It can be removed without the
+ gameserver complaining.
+* Nun:
+ Provides the player with 10 gold coins.
+* Vendor:
+ Sells fish. If the player wants to buy vegetables it
+ provides an info leak (stack address). Can also be
+ used to obtain money by buying a negative amount
+ of fish.
+
+The major bug of the service is that the text input
+procedure only checks for the size of the lines in your
+terminal. However, this information is provided by the
+client during the telnet handshake. So, you can overflow
+the input buffer. This provides an info leak because
+the next address contains a known stack adress.
+Moreover, you can own the control flow because +4 after
+the buffer is the addr of the text input callback method.
+Starting from this point you can do ROP (unfortunately
+for the hacker, the stack is NX). A simple way
+obtain flags is to call the hidden "debugStore" function
+whose call signature is binary compatible with the text
+input callback method. Consequently, one can just write
+this address after the buffer. The function then dumps
+all keys of the kv-store directly on the socket.
+The other possibility is to use ROP to escape from
+the sandboxed client thread. Directly after the connection
+is initialized the client thread enters Linux seccomp mode.
+This disables most of native Linux syscalls. In order to
+provide any meaningful functionality, an unrestricted
+helper thread is used. A socketpair() is used for the
+communication. Since the memory of the two threads is not
+seperated properly, one can override the stack of the
+unrestricted thread in order to get unrestricted code
+execution.
+
+Sample exploits for both vulnerabilites are provided
+in the exploits/ directory. Moreover, the parrot and
+the vendor offer additional attack vectors.
+
+
+========================= NOTICE ===========================
+Please notice that we don't give you any kind of
+guarantee on this software and that we don't respond
+to questions regarding it's functionality or the exploits.
