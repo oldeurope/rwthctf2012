@@ -1,0 +1,139 @@
+#!/usr/bin/python
+
+import pxssh, re, pexpect, sys, random, time, subprocess, os, redis, signal
+
+def init_agent():
+  try:
+    with open(os.devnull, "w") as void:
+      proc = subprocess.Popen(["pidof", "ssh-agent"], stdout=subprocess.PIPE, stderr=void)
+      out  = proc.communicate()[0].strip()
+      ret  = proc.returncode
+
+      if ret != 0:
+        proc2 = subprocess.Popen(["ssh-agent"], stdout=subprocess.PIPE, stderr=void)
+        for env in re.findall("(SSH_[^=\n]+)=([^;\n]+)", proc2.communicate()[0]):
+          os.environ[env[0]] = env[1]
+
+        subprocess.call(["ssh-add", "/home/slave/checkscripts/rainbow/vulnkey"], stdout=void, stderr=void)
+      elif len(out.split()) > 1:
+        subprocess.call(["killall", "ssh-agent"], stdout=void, stderr=void)
+
+        proc2 = subprocess.Popen(["ssh-agent"], stdout=subprocess.PIPE, stderr=void)
+        for env in re.findall("(SSH_[^=\n]+)=([^;\n]+)", proc2.communicate()[0]):
+          os.environ[env[0]] = env[1]
+
+        subprocess.call(["ssh-add", "/home/slave/checkscripts/rainbow/vulnkey"], stdout=void, stderr=void)
+      else:
+        for d in os.listdir("/tmp"):
+          if d.startswith("ssh-"):
+            dir = d
+            break
+
+        os.environ["SSH_AUTH_SOCK"] = "/tmp/%s/%s" % (dir, os.listdir("/tmp/%s" % dir)[0])
+        os.environ["SSH_AGENT_PID"] = out
+  except:
+    pass # errors with the ssh agent are non-fatal
+
+STATUS_OK     = 0
+STATUS_DOWN   = 1
+STATUS_BROKEN = 2
+STATUS_ERROR  = 3
+
+if len(sys.argv) != 4 or (sys.argv[1] != "put" and sys.argv[1] != "get"):
+  sys.stderr.write("Usage: ./check <put|get> <ip> <flag>")
+  sys.exit(STATUS_ERROR)
+
+init_agent()
+
+r = redis.StrictRedis(unix_socket_path="/var/run/redis/redis.sock")
+
+ssh = pxssh.pxssh(timeout=5)
+ssh.force_password = True
+
+def test_exec():
+  cmds   = ["id",  "ls -lh",  "cat keystore.txt", "cat /etc/passwd"]
+  rets   = ["uid", "rainbow", ".+",               "root"]
+  choice = random.randint(0, len(cmds)-1)
+
+  try:
+    ssh.sendline("3")
+    ssh.expect("> ")
+    ssh.sendline(cmds[choice])
+    ssh.expect(rets[choice])
+    time.sleep(1)
+    ssh.sendline("exit")
+    ssh.expect("> ")
+  except:
+    sys.stdout.write("required functionality missing")
+    sys.exit(STATUS_BROKEN)
+
+def handle_timeout(signum, frame):
+  raise
+
+signal.signal(signal.SIGALRM, handle_timeout)
+
+try:
+  signal.alarm(20)
+  ssh.login(sys.argv[2], "shine", "abc123", port=6666, login_timeout=20)
+  signal.alarm(0)
+except pexpect.EOF:
+  sys.stdout.write("connection timed out")
+  sys.stdout.flush()
+  #sys.exit(STATUS_DOWN)
+  os._exit(STATUS_DOWN)
+except:
+  sys.stdout.write("connection timed out")
+  sys.stdout.flush()
+  #sys.exit(STATUS_DOWN)
+  os._exit(STATUS_DOWN)
+
+try:
+  ssh.sendline("socat stdio unix-connect:/tmp/rainbow.sock")
+  ssh.expect("> ")
+except:
+  sys.stdout.write("communication error")
+  sys.exit(STATUS_DOWN)
+
+if random.randint(0, 1) == 1:
+  test_exec()
+
+if sys.argv[1] == "put":
+  try:
+    ssh.sendline("1")
+    ssh.expect("> ")
+    ssh.sendline(sys.argv[3])
+    ssh.expect("> ")
+
+    match = re.search("Your key is: ([0-9a-f]{16})", ssh.before)
+    if match:
+      r.set(sys.argv[3], match.group(1))
+    else:
+      raise
+  except:
+    sys.stdout.write("could not store key")
+    sys.exit(STATUS_BROKEN)
+elif sys.argv[1] == "get":
+  try:
+    ssh.sendline("2")
+    ssh.expect("> ")
+    ssh.sendline(r.get(sys.argv[3]))
+    ssh.expect("> ")
+
+    if sys.argv[3] in ssh.before:
+      pass
+    else:
+      raise
+  except:
+    sys.stdout.write("could not retrieve key")
+    sys.exit(STATUS_BROKEN)
+
+if random.randint(0, 1) == 1:
+  test_exec()
+
+try:
+  ssh.sendintr() # send Strg+C to the client (my default way to exit)
+  ssh.logout()
+except:
+  pass
+
+sys.exit(STATUS_OK)
