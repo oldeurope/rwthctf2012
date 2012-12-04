@@ -1,6 +1,8 @@
 erno
 ====
 
+Florian Weingarten (flo@hackvalue.de)
+
 Rubik's cube ctf service in Haskell.
 
 The Rubik's cube, which can be seen as a subgroup of the group

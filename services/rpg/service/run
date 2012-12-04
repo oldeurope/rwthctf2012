@@ -1,0 +1,3 @@
+#!/bin/bash
+
+su -c "LD_LIBRARY_PATH="." ./rpg" rpg
