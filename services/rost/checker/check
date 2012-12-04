@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+
+CMD='node checker_full.js '"$@"
+
+$CMD
+RET=$?
+
+while [ $RET -eq 42 ]; do
+  $CMD
+  RET=$?
+done;
+
+echo $RET
+exit $RET
