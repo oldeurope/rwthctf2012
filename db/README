@@ -1,2 +1,72 @@
 Gameserver MongoDB
 http://ctf.itsec.rwth-aachen.de/2012/files/rwthCTF2012_db.tar.gz
+
+* Download
+* Run "mongorestore rwthCTF2012_db_dump"
+* Run "mongo ctf"
+* Go crazy, make statistics, send them to us!
+
+Some examples of what you might want to know:
+
+How many flags did we successfully submit?
+> db.submitstats.find({team:6, msg:"Congratulations, you scored a point!"}).count()
+8752
+
+How often did we submit our own flags?
+> db.submitstats.find({team:6, msg:"This is your own flag."}).count()
+684
+
+How often was our service broken?
+> db.runstats.find({team:6,retval:2,service:"ezpz"}).count()
+218
+
+How often did the orga screw up the checkscripts?
+> db.runstats.find({retval:3,service:"erno"}).count()
+0
+> db.runstats.find({retval:3,service:"ezpz"}).count()
+10
+> db.runstats.find({retval:3,service:"rost"}).count()
+1100
+
+Which service was easy and which service was hyper-secure?
+> db.captures.group({key: { service: 1 }, initial: { caps: 0 }, reduce: function(a,b) { b.caps += 1 }})
+	{
+		"service" : "ezpz",
+		"caps" : 75401
+	},
+	{
+		"service" : "tattle",
+		"caps" : 104662
+	},
+	{
+		"service" : "zork",
+		"caps" : 116360
+	},
+	{
+		"service" : "rost",
+		"caps" : 2338
+	},
+	{
+		"service" : "rfs",
+		"caps" : 17404
+	},
+	{
+		"service" : "rpg",
+		"caps" : 2251
+	},
+	{
+		"service" : "erno",
+		"caps" : 21
+	},
+	{
+		"service" : "rainbow",
+		"caps" : 46
+	},
+	{
+		"service" : "azurecoast",
+		"caps" : 3613
+	}
+
+Who exploited us the most?
+> db.captures.group({key: { team: 1 }, initial: { caps: 0 }, reduce: function(a,b) { if(a.owner == 42) { b.caps += 1 } }})
+...
