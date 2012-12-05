@@ -30,9 +30,11 @@ were allocated a /24 network within 10.12.0.0/17, e.g. team 5 was assigned the
 network 10.12.5.0/24. During preparation, the rwthCTF staff used the networks
 10.12.129.0/24 to 10.12.141.0/24 to connect to the network.
 
-The VPN gateway had two network interfaces: eth0 (137.226.161.28/24) was the
+The VPN gateway had three network interfaces: eth0 (137.226.161.28/24) was the
 public interface where teams' connected to via VPN, eth1 (10.12.250.2/24) was
-the internal network which hosted the staff workstations and servers.
+the internal network which hosted the staff workstations and servers. The third
+network interface eth2 was connected to a separated logging server at
+192.168.1.23/24.
 
 OpenVPN configuration
 ---------------------
@@ -96,11 +98,23 @@ addresses with the last byte set to a value above 16, so all traffic to
 services can be match by using the network and netmask
 10.12.0.0/255.255.128.240.
 
-During the game, the teams were only allowed to contact the gameserver (at
+During the game, the teams were only allowed to contact the game server (at
 10.12.250.1) and the other teams' vulnerable services, but not the transport
 networks, the other teams' players or anything not part of the game.
+
+The teams should not be able to distinguish the game server (at 10.12.250.1)
+from other teams' clients, therefore all traffic that is going out to the VPN
+is masqueraded behind the IP addresses 10.12.253.10 to 10.12.253.20. Several IP
+addresses were used for masquerading so that a huge number of parallel
+connections can be masqueraded, typically one masqueraded connection blocks one
+source port for the masqueraded IP address.  Furthermore, the TTL of outgoing
+IP packets is always set to 42 and TCP timestamps are stripped.
 
 Before the game, rwthCTF staff was also using VPN with special certificates
 which were routed the networks 10.12.129.0/24 to 10.12.141.0/24, especially
 these networks were not contained within 10.12.0.0/17.
+
+All traffic between teams was sent to a separate server by using the TEE target
+of iptables for logging the complete traffic with tcpdump. Afterwards the dumps
+were published.
 
