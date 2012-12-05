@@ -1,0 +1,238 @@
+#!/home/slave/checkscripts/ezpz/ctfpy
+# -*- coding: utf8 -*-
+
+import os
+import sys
+import random
+import string
+import gevent
+import gevent.socket
+import nacl
+#import rwthctfstore.hash
+
+import pack
+
+TIMEOUT_CONNECT = 20
+TIMEOUT_SOCKET = 5
+
+EZPZ_PORT = 65432
+BUFSIZ = 16 * 1024
+EZ_REQ = 0
+EZ_RES = 1
+
+#store = rwthctfstore.hash.Hash()
+#store.open('./flagdata', rwthctfstore.hash.HDBOWRITER | rwthctfstore.hash.HDBOCREAT)
+
+pubkey, privkey = nacl.crypto_sign_keypair()
+encoder = random.choice(['base64', 'hex', 'rot13'])
+rands = [''.join(random.sample(string.lowercase, 5)) for i in range(3)]
+
+EVALTEMPLATE_PUT = '''
+import sys as {rands[0]}
+open("{flagout}".decode("{decoder}"),"w").write("{flag}".decode("{decoder}"))
+print >>{rands[0]}.stderr, "{flagout}".decode("{decoder}")
+print "{putandkey}".decode("{decoder}")
+{rands[0]}.stdout.flush()
+{rands[0]}.stderr.flush()
+print "{close}".decode("{decoder}")
+{rands[0]}.stdout.flush()
+print "{result}".decode("{decoder}"), {rands[0]}.stdin.read()
+'''
+
+EVALTEMPLATE_GET = '''
+import select as {rands[0]}
+import sys as {rands[1]}
+print "{getandkey}".decode("{decoder}")
+print 
+print "{close}".decode("{decoder}")
+{rands[1]}.stdout.flush()
+
+{rands[0]}.select([{rands[1]}.stdin], [], [], 5)
+{rands[2]} = {rands[1]}.stdin.read()
+print "{result}".decode("{decoder}"), {rands[2]}
+'''
+
+def buildeval_put(flag, key):
+	return EVALTEMPLATE_PUT.format(rands=rands, 
+		decoder=encoder, flag=flag.encode(encoder).strip(),
+		putandkey=('put ' + key).encode(encoder).strip(),
+		close='close'.encode(encoder).strip(),
+		result='result'.encode(encoder).strip(),
+		flagout='/tmp/flagout'.encode(encoder).strip()
+	)
+
+def buildeval_get(key):
+	return EVALTEMPLATE_GET.format(rands=rands,
+		decoder=encoder,
+		getandkey=('get ' + key).encode(encoder).strip(),
+		close='close'.encode(encoder).strip(),
+		result='result'.encode(encoder).strip(),
+	)
+
+
+class Broken(Exception):
+	pass
+class Down(Exception):
+	pass
+
+class ezclient(object):
+	def __init__(self, ip, flag):
+		self.ip, self.flag = ip, flag
+		self.s = None
+		self.u = pack.U()
+		self.p = pack.P()
+		self.fh = nacl.crypto_hash_sha256(self.flag).encode('hex')
+
+	def write(self, data, emsg):
+		try:
+			self.s.sendall(data)
+		except Exception as e:
+			raise Broken('couldnt send {0}'.format(emsg))
+
+	def connect(self):
+		try: self.s = gevent.socket.create_connection((self.ip, EZPZ_PORT), timeout=TIMEOUT_CONNECT)
+		except gevent.socket.timeout, e:
+			raise Down('timeout')
+		except gevent.socket.error, e:
+			raise Down(e)
+		self.msgid = random.randint(1, 999)
+		self.write('ezpzrpc client\n', 'banner')
+		self.s.settimeout(TIMEOUT_SOCKET)
+		self.recvbanner()
+
+	def recvbanner(self):
+		buf = ''
+		while not '\n' in buf:
+			tmp = self.s.recv(BUFSIZ)
+			if not tmp: raise Broken('recv banner fail')
+			buf += tmp
+
+		buf, rest = buf.split('\n', 1)
+		if not 'ezpzrpc' in buf: raise Broken('banner fail')
+		self.u.feed(rest)
+
+	def getresponse(self, emsg):
+		gotmsg = False
+		buflen = 0
+		result = None
+		while not gotmsg:
+			try: d = self.s.recv(BUFSIZ)
+			except: raise Broken('recv fail')
+			if not d: raise Broken('premature close?')
+			self.u.feed(d)
+			buflen += len(d)
+			if buflen >= BUFSIZ * 10: raise Broken('too much data')
+			for msg in self.u:
+				if not type(msg) in (list, tuple) or len(msg) < 4: raise Broken('bad protocol msg')
+				gotmsg = True
+				if msg[0] != EZ_RES: raise Broken('msg is not a response')
+				rmsgid, error, result = msg[1:4]
+				if rmsgid == -1: print '-1:', error
+				if rmsgid != self.msgid: raise Broken('msgid failure')
+				if error: raise Broken(error)
+				break
+
+		return result
+
+	def call(self, fn, *params):
+		req = [EZ_REQ, self.msgid, fn, params]
+		signature = nacl.crypto_sign(self.p.pack(req), privkey)
+		req.append(signature)
+		self.write(self.p.pack(req), 'call {0}'.format(fn))
+		r = self.getresponse(fn)
+		self.msgid += 1
+		return r
+
+	def put(self):
+		self.connect()
+
+		r = self.call('register', pubkey)
+		if r != True: raise Broken('register fail')
+
+		r = self.call('hello', 'dude')
+		if not 'hello dude' in r: raise Broken('hello')
+
+		rpub = self.call('whois')
+		if not len(rpub) == 64: raise Broken('no pubkey')
+
+		if random.randint(0, 1):
+			r = self.call('put', self.fh[:8], self.flag)
+			if r != True: raise Broken('direct put failed')
+		else:
+			r = self.call('evaluate', buildeval_put(self.flag, self.fh[:8]))
+			if not type(r) in (list, tuple) or len(r) < 2: raise Broken('invalid response')
+			if not 'put ok!' in r[0]: raise Broken('eval put failed')
+
+		return 0
+
+	def get(self):
+		self.connect()
+
+		r = self.call('register', pubkey)
+		if r != True: raise Broken('register fail')
+
+		r = self.call('hello', 'bro')
+		if not 'hello bro' in r: raise Broken('hello')
+
+		r = self.call('list', 'item_{0}'.format(self.fh[:8]))
+		if not len(r) == 1: raise Broken('item not found')
+
+		if random.randint(0, 1):
+			r = self.call('get', self.fh[:8])
+			if not r == self.flag: raise Broken('direct get invalid flag')
+		else:
+			r = self.call('evaluate', buildeval_get(self.fh[:8]))
+			if not type(r) in (list, tuple) or len(r) < 2: raise Broken('eval get invalid response')
+			if not 'result ' + self.flag in r[0]: raise Broken('eval get failed')
+
+		return 0
+
+	def shell(self):
+		self.connect()
+		from IPython import embed
+		import IPython.lib.inputhook
+		IPython.lib.inputhook.enable_gui(gui='gevent')
+		embed(user_ns=locals())
+
+def main():
+	if len(sys.argv) != 4: raise Exception("argc != 4")
+	method, ip, flag = sys.argv[1:4]
+	cli = ezclient(ip, flag)
+
+	if method == 'put':
+		return cli.put()
+	elif method == 'get':
+		return cli.get()
+	elif method == 'shell':
+		return cli.shell()
+	else:
+		raise Exception("!= put/get")
+
+	return 3
+
+if __name__ == '__main__':
+	try:
+		sys.exit(main())
+	except KeyboardInterrupt:
+		pass
+	except Down, e:
+		print e
+		sys.exit(1)
+	except Broken, e:
+		print e
+		sys.exit(2)
+	except gevent.Timeout:
+		print 'timeout'
+		sys.exit(2)
+	except gevent.socket.timeout:
+		print 'timeout'
+		sys.exit(2)
+	except Exception, e:
+		print 'internal error.'
+
+		# remove traceback when done developing :)
+		#import traceback
+		#traceback.print_exc()
+
+		print >>sys.stderr, "Error: {0}".format(e)
+		sys.exit(3)
