@@ -100,7 +100,10 @@ services can be match by using the network and netmask
 
 During the game, the teams were only allowed to contact the game server (at
 10.12.250.1) and the other teams' vulnerable services, but not the transport
-networks, the other teams' players or anything not part of the game.
+networks, the other teams' players or anything not part of the game. The rules
+contained within ferm.conf were used before the game. Shortly before the start,
+all rules marked with the comment `START` were added so that
+team-to-team-traffic is permitted.
 
 The teams should not be able to distinguish the game server (at 10.12.250.1)
 from other teams' clients, therefore all traffic that is going out to the VPN
