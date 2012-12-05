@@ -66,6 +66,10 @@ calling `visudo` and inserting the following entry:
 
     nobody ALL= NOPASSWD: /bin/ip
 
+For performance reasons, packet authentication and encryption were both
+disabled. A sample `client.conf` for team 5 is also contained in this
+directory.
+
 Config Templates
 ----------------
 
