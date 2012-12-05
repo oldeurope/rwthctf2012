@@ -31,7 +31,7 @@ with the user and/or the checker.
  vulnerable to formatstring attacks. Its
  presence is required by the gameserver.
  However, you should fix the format vuln.
-* Honet Achmet:
+* Honest Achmet:
  NPC that sells you the keys of the kv-store for
  10 gold coins. It can be removed without the
  gameserver complaining.
@@ -48,7 +48,7 @@ procedure only checks for the size of the lines in your
 terminal. However, this information is provided by the
 client during the telnet handshake. So, you can overflow
 the input buffer. This provides an info leak because
-the next address contains a known stack adress.
+the next address contains a known stack address.
 Moreover, you can own the control flow because +4 after
 the buffer is the addr of the text input callback method.
 Starting from this point you can do ROP (unfortunately
@@ -65,11 +65,11 @@ This disables most of native Linux syscalls. In order to
 provide any meaningful functionality, an unrestricted
 helper thread is used. A socketpair() is used for the
 communication. Since the memory of the two threads is not
-seperated properly, one can override the stack of the
+separated properly, one can override the stack of the
 unrestricted thread in order to get unrestricted code
 execution.
 
-Sample exploits for both vulnerabilites are provided
+Sample exploits for both vulnerabilities are provided
 in the exploits/ directory. Moreover, the parrot and
 the vendor offer additional attack vectors.
 
