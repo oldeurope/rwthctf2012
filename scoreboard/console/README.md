@@ -1,1 +1,1 @@
-![sb](final_scoreboard.png)
+![sb](http://raw.github.com/oldeurope/rwthctf2012/master/scoreboard/console/final_scoreboard.png)
