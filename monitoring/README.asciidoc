@@ -1,0 +1,32 @@
+# vim:ft=asciidoc
+
+rwthCTF 2012 monitoring
+=======================
+
+Description
+-----------
+Stab at real-time monitoring of system parameters using Cubism.js
+(http://square.github.com/cubism/) for rwthCTF 2012.
+
+Install
+-------
+1. npm install cube
+2. node collector
+3. cd evaluator; node evaluator
+4. node emitter
+
+You'll have to adjust IPs/hostnames in these scripts. Simply copy the emitter
+to hosts you want to monitor. With the evaluator running, you can visit
+http://evaluator-ip:8080
+
+mongodb queries:
+----------------
+ - delete all events older than...
+   
+   db.getCollectionNames().forEach(function(x) {
+     eval("db." + x + ".remove({t: {$lt: ISODate('2012-11-30T00:00:00.000Z')}})")
+   })
+
+Possible next steps
+-------------------
+ - Use capped collections in mongodb

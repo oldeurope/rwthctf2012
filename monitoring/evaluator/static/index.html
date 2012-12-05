@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<title>rwthCTF 2012 control center</title>
+<style>
+
+@import url(//fonts.googleapis.com/css?family=Yanone+Kaffeesatz:400,700);
+@import url(style.css);
+
+#example1 { min-height: 155px; }
+
+</style>
+<div id="body">
+
+<h2>gameserver</h2>
+<div id="host"></div>
+<h2>VPN</h2>
+<div id="vpn"></div>
+<h2>Slaves</h2>
+<div id="slaves"></div>
+
+<p>
+Resolution: 
+<select id="step">
+  <option value="1e4">10 seconds</option>
+  <option value="6e4">1 minute</option>
+  <option value="3e5">5 minutes</option>
+  <option value="36e5">1 hour</option>
+  <option value="864e5">1 day</option>
+</select>
+</p>
+
+<script src="d3.v2.min.js"></script>
+<script src="cubism.v1.min.js"></script>
+<script src="highlight.min.js"></script>
+<script>
+
+var step = +cubism.option("step", 1e4);
+
+var context = cubism.context()
+    .serverDelay(0)
+    .clientDelay(0)
+    .step(step)
+    .size(960);
+
+var cube = context.cube("http://10.12.250.42:8080");
+
+d3.select("#host").call(function(div) {
+
+  div.append("div")
+      .attr("class", "axis")
+      .call(context.axis().orient("top"));
+
+  div.selectAll(".horizon")
+      .data([
+      {title: "used mem", metric: (cube.metric("median(gameserver_10122501(mem.total))")
+        .subtract(cube.metric("median(gameserver_10122501(mem.free))"))
+        .subtract(cube.metric("median(gameserver_10122501(mem.buffers))"))
+	.subtract(cube.metric("median(gameserver_10122501(mem.cached))")))
+      },
+      {title: "cpu total", metric: 
+        (cube.metric("max(gameserver_10122501(cpu.user_jiffies + cpu.system_jiffies + cpu.nice_jiffies))").subtract(
+          (cube.metric("max(gameserver_10122501(cpu.user_jiffies + cpu.system_jiffies + cpu.nice_jiffies))").shift(-step))
+        ))
+        .divide(
+        (cube.metric("max(gameserver_10122501(cpu.total_jiffies))").subtract(
+          (cube.metric("max(gameserver_10122501(cpu.total_jiffies))").shift(-step))
+        ))
+        ).multiply(100)
+      },
+      /*
+      {title: "cpu user", metric: 
+        (cube.metric("max(gameserver_10122501(cpu.user_jiffies))").subtract(
+          (cube.metric("max(gameserver_10122501(cpu.user_jiffies))").shift(-step))
+        ))
+        .divide(
+        (cube.metric("max(gameserver_10122501(cpu.total_jiffies))").subtract(
+          (cube.metric("max(gameserver_10122501(cpu.total_jiffies))").shift(-step))
+        ))
+        ).multiply(100)
+      },
+      */
+      {title: "DB new obj / 30s", metric: cube.metric("median(gameserver(stats.objects))").subtract(cube.metric("median(gameserver(stats.objects))").shift(-30000))},
+      {title: "captures / 30s", metric: cube.metric("median(gameserver(captures_total))").subtract(cube.metric("median(gameserver(captures_total))").shift(-30000))},
+      {title: "checker errors / 30s", metric: cube.metric("max(gameserver(checker_errors))").subtract(cube.metric("max(gameserver(checker_errors))").shift(-30000))},
+      ])
+    .enter().append("div")
+      .attr("class", "horizon")
+      .call(context.horizon()
+        .height(30)
+        .title(function(d) { return d.title; })
+        .metric(function(d) { return d.metric; })
+      );
+
+});
+
+d3.select("#vpn").call(function(div) {
+
+  div.append("div")
+      .attr("class", "axis")
+      .call(context.axis().orient("top"));
+
+  div.selectAll(".horizon")
+      .data([
+      {title: "used mem", metric: (cube.metric("median(ctfoptiplex980_13722616128(mem.total))")
+        .subtract(cube.metric("median(ctfoptiplex980_13722616128(mem.free))"))
+        .subtract(cube.metric("median(ctfoptiplex980_13722616128(mem.buffers))"))
+	.subtract(cube.metric("median(ctfoptiplex980_13722616128(mem.cached))")))
+      },
+      {title: "cpu total", metric: 
+        (cube.metric("max(ctfoptiplex980_13722616128(cpu.user_jiffies + cpu.system_jiffies + cpu.nice_jiffies))").subtract(
+          (cube.metric("max(ctfoptiplex980_13722616128(cpu.user_jiffies + cpu.system_jiffies + cpu.nice_jiffies))").shift(-step))
+        ))
+        .divide(
+        (cube.metric("max(ctfoptiplex980_13722616128(cpu.total_jiffies))").subtract(
+          (cube.metric("max(ctfoptiplex980_13722616128(cpu.total_jiffies))").shift(-step))
+        ))
+        ).multiply(100)
+      },
+      /*{title: "procs running", metric: cube.metric("max(ctfoptiplex980_13722616128(procs.running))")},*/
+      {title: "nfconntrack entries", metric: cube.metric("max(ctfoptiplex980_13722616128(network.natcount))")},
+      {title: "vpn clients", metric: cube.metric("max(ctfoptiplex980_13722616128(vpn.clients_connected))")},
+      {title: "eth0 pkt size", metric: 
+        (cube.metric("median(ctfoptiplex980_13722616128(network.eth0.rxb))").subtract(
+          (cube.metric("median(ctfoptiplex980_13722616128(network.eth0.rxb))").shift(-step))
+        ))
+        .divide(
+        (cube.metric("median(ctfoptiplex980_13722616128(network.eth0.rxp))").subtract(
+          (cube.metric("median(ctfoptiplex980_13722616128(network.eth0.rxp))").shift(-step))
+        ))
+        ).add(
+        (cube.metric("median(ctfoptiplex980_13722616128(network.eth0.txb))").subtract(
+          (cube.metric("median(ctfoptiplex980_13722616128(network.eth0.txb))").shift(-step))
+        ))
+        .divide(
+        (cube.metric("median(ctfoptiplex980_13722616128(network.eth0.txp))").subtract(
+          (cube.metric("median(ctfoptiplex980_13722616128(network.eth0.txp))").shift(-step))
+        ))
+        )
+        )
+      },
+      {title: "eth0 pkt/s", metric: (cube.metric("median(ctfoptiplex980_13722616128(network.eth0.rxp+network.eth0.txp))").subtract(cube.metric("median(ctfoptiplex980_13722616128(network.eth0.rxp+network.eth0.txp))").shift(-step)).divide(step/1e3))},
+      {title: "eth0 rx B/s", metric: (cube.metric("median(ctfoptiplex980_13722616128(network.eth0.rxb))").subtract(cube.metric("median(ctfoptiplex980_13722616128(network.eth0.rxb))").shift(-step))).divide(step/1e3)},
+      {title: "eth0 tx B/s", metric: (cube.metric("-median(ctfoptiplex980_13722616128(network.eth0.txb))").subtract(cube.metric("-median(ctfoptiplex980_13722616128(network.eth0.txb))").shift(-step))).divide(step/1e3)},
+      /*
+      {title: "eth0 rx pkt/s", metric: (cube.metric("median(ctfoptiplex980_13722616128(network.eth0.rxp))").subtract(cube.metric("median(ctfoptiplex980_13722616128(network.eth0.rxp))").shift(-step))).divide(step/1e3)},
+      {title: "eth0 tx pkt/s", metric: (cube.metric("-median(ctfoptiplex980_13722616128(network.eth0.txp))").subtract(cube.metric("-median(ctfoptiplex980_13722616128(network.eth0.txp))").shift(-step))).divide(step/1e3)},
+      {title: "tun0 rx B/s", metric: (cube.metric("median(ctfoptiplex980_13722616128(network.tun0.rxb))").subtract(cube.metric("median(ctfoptiplex980_13722616128(network.tun0.rxb))").shift(-step))).divide(step/1e3)},
+      {title: "tun0 tx B/s", metric: (cube.metric("-median(ctfoptiplex980_13722616128(network.tun0.txb))").subtract(cube.metric("-median(ctfoptiplex980_13722616128(network.tun0.txb))").shift(-step))).divide(step/1e3)},
+      {title: "tun0 rx pkt/s", metric: (cube.metric("median(ctfoptiplex980_13722616128(network.tun0.rxp))").subtract(cube.metric("median(ctfoptiplex980_13722616128(network.tun0.rxp))").shift(-step))).divide(step/1e3)},
+      {title: "tun0 tx pkt/s", metric: (cube.metric("-median(ctfoptiplex980_13722616128(network.tun0.txp))").subtract(cube.metric("-median(ctfoptiplex980_13722616128(network.tun0.txp))").shift(-step))).divide(step/1e3)},
+      */
+      ])
+    .enter().append("div")
+      .attr("class", "horizon")
+      .call(context.horizon()
+        .height(30)
+        .title(function(d) { return d.title; })
+        .metric(function(d) { return d.metric; })
+      );
+
+});
+
+d3.select("#slaves").call(function(div) {
+
+  div.append("div")
+      .attr("class", "axis")
+      .call(context.axis().orient("top"));
+
+  div.selectAll(".horizon")
+      .data([
+      {title: "slave3 (erno) used mem", metric: (cube.metric("median(erno_10122503(mem.total))")
+        .subtract(cube.metric("median(erno_10122503(mem.free))"))
+        .subtract(cube.metric("median(erno_10122503(mem.buffers))"))
+	.subtract(cube.metric("median(erno_10122503(mem.cached))")))
+      },
+      {title: "slave3 (erno) cpu total", metric: 
+        (cube.metric("max(erno_10122503(cpu.user_jiffies + cpu.system_jiffies + cpu.nice_jiffies))").subtract(
+          (cube.metric("max(erno_10122503(cpu.user_jiffies + cpu.system_jiffies + cpu.nice_jiffies))").shift(-step))
+        ))
+        .divide(
+        (cube.metric("max(erno_10122503(cpu.total_jiffies))").subtract(
+          (cube.metric("max(erno_10122503(cpu.total_jiffies))").shift(-step))
+        ))
+        ).multiply(100)
+      },
+      {title: "slave4 (rpg) used mem", metric: (cube.metric("median(slave_10122504(mem.total))")
+        .subtract(cube.metric("median(slave_10122504(mem.free))"))
+        .subtract(cube.metric("median(slave_10122504(mem.buffers))"))
+	.subtract(cube.metric("median(slave_10122504(mem.cached))")))
+      },
+      {title: "slave4 (rpg) cpu total", metric: 
+        (cube.metric("max(slave_10122504(cpu.user_jiffies + cpu.system_jiffies + cpu.nice_jiffies))").subtract(
+          (cube.metric("max(slave_10122504(cpu.user_jiffies + cpu.system_jiffies + cpu.nice_jiffies))").shift(-step))
+        ))
+        .divide(
+        (cube.metric("max(slave_10122504(cpu.total_jiffies))").subtract(
+          (cube.metric("max(slave_10122504(cpu.total_jiffies))").shift(-step))
+        ))
+        ).multiply(100)
+      },
+      {title: "slave5 (tattle) used mem", metric: (cube.metric("median(slave_10122505(mem.total))")
+        .subtract(cube.metric("median(slave_10122505(mem.free))"))
+        .subtract(cube.metric("median(slave_10122505(mem.buffers))"))
+	.subtract(cube.metric("median(slave_10122505(mem.cached))")))
+      },
+      {title: "slave5 (tattle) cpu total", metric: 
+        (cube.metric("max(slave_10122505(cpu.user_jiffies + cpu.system_jiffies + cpu.nice_jiffies))").subtract(
+          (cube.metric("max(slave_10122505(cpu.user_jiffies + cpu.system_jiffies + cpu.nice_jiffies))").shift(-step))
+        ))
+        .divide(
+        (cube.metric("max(slave_10122505(cpu.total_jiffies))").subtract(
+          (cube.metric("max(slave_10122505(cpu.total_jiffies))").shift(-step))
+        ))
+        ).multiply(100)
+      },
+      {title: "slave6 (rainbow) used mem", metric: (cube.metric("median(slave_10122506(mem.total))")
+        .subtract(cube.metric("median(slave_10122506(mem.free))"))
+        .subtract(cube.metric("median(slave_10122506(mem.buffers))"))
+	.subtract(cube.metric("median(slave_10122506(mem.cached))")))
+      },
+      {title: "slave6 (rainbow) cpu total", metric: 
+        (cube.metric("max(slave_10122506(cpu.user_jiffies + cpu.system_jiffies + cpu.nice_jiffies))").subtract(
+          (cube.metric("max(slave_10122506(cpu.user_jiffies + cpu.system_jiffies + cpu.nice_jiffies))").shift(-step))
+        ))
+        .divide(
+        (cube.metric("max(slave_10122506(cpu.total_jiffies))").subtract(
+          (cube.metric("max(slave_10122506(cpu.total_jiffies))").shift(-step))
+        ))
+        ).multiply(100)
+      },
+      {title: "slave7 (rfs) used mem", metric: (cube.metric("median(slave_10122507(mem.total))")
+        .subtract(cube.metric("median(slave_10122507(mem.free))"))
+        .subtract(cube.metric("median(slave_10122507(mem.buffers))"))
+	.subtract(cube.metric("median(slave_10122507(mem.cached))")))
+      },
+      {title: "slave7 (rfs) cpu total", metric: 
+        (cube.metric("max(slave_10122507(cpu.user_jiffies + cpu.system_jiffies + cpu.nice_jiffies))").subtract(
+          (cube.metric("max(slave_10122507(cpu.user_jiffies + cpu.system_jiffies + cpu.nice_jiffies))").shift(-step))
+        ))
+        .divide(
+        (cube.metric("max(slave_10122507(cpu.total_jiffies))").subtract(
+          (cube.metric("max(slave_10122507(cpu.total_jiffies))").shift(-step))
+        ))
+        ).multiply(100)
+      },
+      {title: "slave8 (rost) used mem", metric: (cube.metric("median(slave_10122508(mem.total))")
+        .subtract(cube.metric("median(slave_10122508(mem.free))"))
+        .subtract(cube.metric("median(slave_10122508(mem.buffers))"))
+	.subtract(cube.metric("median(slave_10122508(mem.cached))")))
+      },
+      {title: "slave8 (rost) cpu total", metric: 
+        (cube.metric("max(slave_10122508(cpu.user_jiffies + cpu.system_jiffies + cpu.nice_jiffies))").subtract(
+          (cube.metric("max(slave_10122508(cpu.user_jiffies + cpu.system_jiffies + cpu.nice_jiffies))").shift(-step))
+        ))
+        .divide(
+        (cube.metric("max(slave_10122508(cpu.total_jiffies))").subtract(
+          (cube.metric("max(slave_10122508(cpu.total_jiffies))").shift(-step))
+        ))
+        ).multiply(100)
+      },
+      {title: "slave9 (zork) used mem", metric: (cube.metric("median(slave_10122509(mem.total))")
+        .subtract(cube.metric("median(slave_10122509(mem.free))"))
+        .subtract(cube.metric("median(slave_10122509(mem.buffers))"))
+	.subtract(cube.metric("median(slave_10122509(mem.cached))")))
+      },
+      {title: "slave9 (zork) cpu total", metric: 
+        (cube.metric("max(slave_10122509(cpu.user_jiffies + cpu.system_jiffies + cpu.nice_jiffies))").subtract(
+          (cube.metric("max(slave_10122509(cpu.user_jiffies + cpu.system_jiffies + cpu.nice_jiffies))").shift(-step))
+        ))
+        .divide(
+        (cube.metric("max(slave_10122509(cpu.total_jiffies))").subtract(
+          (cube.metric("max(slave_10122509(cpu.total_jiffies))").shift(-step))
+        ))
+        ).multiply(100)
+      },
+      {title: "slave10 (azurecoast) used mem", metric: (cube.metric("median(slave_101225010(mem.total))")
+        .subtract(cube.metric("median(slave_101225010(mem.free))"))
+        .subtract(cube.metric("median(slave_101225010(mem.buffers))"))
+	.subtract(cube.metric("median(slave_101225010(mem.cached))")))
+      },
+      {title: "slave10 (azurecoast) cpu total", metric: 
+        (cube.metric("max(slave_101225010(cpu.user_jiffies + cpu.system_jiffies + cpu.nice_jiffies))").subtract(
+          (cube.metric("max(slave_101225010(cpu.user_jiffies + cpu.system_jiffies + cpu.nice_jiffies))").shift(-step))
+        ))
+        .divide(
+        (cube.metric("max(slave_101225010(cpu.total_jiffies))").subtract(
+          (cube.metric("max(slave_101225010(cpu.total_jiffies))").shift(-step))
+        ))
+        ).multiply(100)
+      },
+      {title: "slave11 (mark) used mem", metric: (cube.metric("median(slave_101225011(mem.total))")
+        .subtract(cube.metric("median(slave_101225011(mem.free))"))
+        .subtract(cube.metric("median(slave_101225011(mem.buffers))"))
+	.subtract(cube.metric("median(slave_101225011(mem.cached))")))
+      },
+      {title: "slave11 (mark) cpu total", metric: 
+        (cube.metric("max(slave_101225011(cpu.user_jiffies + cpu.system_jiffies + cpu.nice_jiffies))").subtract(
+          (cube.metric("max(slave_101225011(cpu.user_jiffies + cpu.system_jiffies + cpu.nice_jiffies))").shift(-step))
+        ))
+        .divide(
+        (cube.metric("max(slave_101225011(cpu.total_jiffies))").subtract(
+          (cube.metric("max(slave_101225011(cpu.total_jiffies))").shift(-step))
+        ))
+        ).multiply(100)
+      },
+      ])
+    .enter().append("div")
+      .attr("class", "horizon")
+      .call(context.horizon()
+        .height(30)
+        .title(function(d) { return d.title; })
+        .metric(function(d) { return d.metric; })
+      );
+
+});
+
+// Add a mouseover rule.
+d3.select("body").append("div")
+    .attr("class", "rule")
+    .call(context.rule());
+
+// On mousemove, reposition the chart values to match the rule.
+context.on("focus", function(i) {
+  d3.selectAll(".value").style("right", i == null ? null : context.size() - i + "px");
+});
+
+// Initialize the step menu's selection.
+d3.selectAll("#step option").property("selected", function() {
+  return this.value == step;
+});
+
+// Update the location on step change.
+d3.select("#step").on("change", function() {
+  window.location = "?step=" + this.value + "&" + location.search.replace(/[?&]step=[^&]*(&|$)/g, "$1").substring(1);
+});
+
+</script>
