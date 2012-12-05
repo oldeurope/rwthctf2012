@@ -1,0 +1,13 @@
+gibson
+======
+
+Florian Weingarten (flo@hackvalue.de)
+
+creating fancy real-time gource visualization of the ctf game with
+gameserver, slaves and teams flying around and stuff :-)
+
+looks like this:
+
+http://ctf.itsec.rwth-aachen.de/gallery/rwthCTF_20121130_160004_IMG_8953_jojo.jpg
+
+rendered video coming soon.
