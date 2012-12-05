@@ -230,9 +230,9 @@ if __name__ == '__main__':
 	except Exception, e:
 		print 'internal error.'
 
-		# remove traceback when done developing :)
-		#import traceback
-		#traceback.print_exc()
+		# hopefully does not happen
+		import traceback
+		traceback.print_exc()
 
 		print >>sys.stderr, "Error: {0}".format(e)
 		sys.exit(3)
