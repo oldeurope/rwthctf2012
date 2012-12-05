@@ -12,8 +12,8 @@ Overview/Architecture
 ---------------------
 
 At rwthCTF 2012 we used an octa-core Intel i7 with 16GB RAM exclusively for
-hosting the VPN and the firewall. Since OpenVPN is running as a user land
-single thread, we decided to split the load over eight distinct OpenVPN
+hosting the VPN and the firewall. Since OpenVPN is running as a single thread
+in user land, we decided to split the load over eight distinct OpenVPN
 processes, so that the full computing capacity of the machine is utilized. We
 also decided not to expose this to the participants and let the firewall
 forward new incoming VPN connections to an OpenVPN instance. The OpenVPN
