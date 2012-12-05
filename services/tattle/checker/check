@@ -1,0 +1,219 @@
+#!/usr/bin/ruby1.9.1
+require 'socket'
+require 'timeout'
+require 'pp'
+require 'time'
+
+PORT = 62882
+TIMEOUT_CONNECT = 20
+TIMEOUT_SOCKET = 5
+DEBUG = false
+#DEBUG = true
+
+ERROR = [
+	"Could not connect to service.",
+	"Connection error.",
+	"Protocol error.",
+	"Flag is gone",
+]
+
+EXIT = {
+	:ok => 0,
+	:down => 1,
+	:broken => 2,
+	:error => 3,
+}
+
+cmd, ip, flag = ARGV
+
+if ARGV.length != 3 or (cmd != "get" and cmd != "put")
+	puts "Usage: #{$0} <put/get> <ip> <flag>"
+	exit EXIT[:error]
+end
+
+def save(ip, flag, id)
+	puts " CHECK: Saving #{ip}:#{flag} = #{id.inspect} to database." if DEBUG
+	begin
+		f = File.open("flag_#{ip}_#{flag}", "w")
+		f.write id
+		f.close
+	rescue => errormsg
+		puts "Error saving flag to database."
+		STDERR.puts errormsg.inspect
+		puts EXIT[:error]
+	end
+end
+
+def restore(ip, flag)
+	begin
+		f = File.open("flag_#{ip}_#{flag}", "r")
+	rescue => errormsg
+		f = nil
+		STDERR.puts errormsg.inspect
+	end
+
+	if f != nil
+		id = f.read
+	else
+		puts "Flag not found in database."
+		exit EXIT[:error]
+	end
+
+	puts " CHECK: Restored #{ip}:#{flag} = #{id.inspect} from database." if DEBUG
+	return id
+end
+
+def delete(ip, flag)
+	puts " CHECK: Deleting #{ip}:#{flag} from database." if DEBUG
+	begin
+		File.delete("flag_#{ip}_#{flag}")
+	rescue => errormsg
+		STDERR.puts errormsg.inspect
+	end
+end
+
+def send(s, m)
+	begin
+		s.puts m
+		puts "CLIENT: #{m.inspect}" if DEBUG
+	rescue => errormsg
+		# Connection error
+		puts ERROR[1]
+		STDERR.puts errormsg.inspect
+		exit EXIT[:broken]
+	end
+end
+
+def read(s)
+	begin
+		l = nil
+		begin
+			Timeout::timeout(TIMEOUT_SOCKET) do
+				l = s.gets
+			end
+		rescue Timeout::Error
+			puts ERROR[1] + " Read timeout."
+			exit EXIT[:broken]
+		end
+		if l == nil then
+			puts ERROR[1]
+			exit EXIT[:broken]
+		end
+		# kill escape sequences
+ 		l.gsub!(/\e\[[0-9]*[a-z]/i, '')
+		puts "SERVER: #{l.chomp.inspect}" if DEBUG
+	rescue => errormsg
+		puts ERROR[1]
+		STDERR.puts errormsg.inspect
+		exit EXIT[:broken]
+	end
+	return l.chomp
+end
+
+def read_until(s, condition)
+	maxlines = 15
+	begin
+		line = read(s)
+		maxlines -= 1
+	end while maxlines > 0 && line !~ condition
+
+	if maxlines == 0
+		puts ERROR[2]+" 1"
+		exit EXIT[:broken]
+	end
+	return line
+end
+
+def rand_name
+	length = rand(20)+8
+	chars = ('a'..'z').to_a+('A'..'Z').to_a+('0'..'9').to_a
+	return (1..length).map{ chars[rand(62)] }.join
+end
+
+# Verbindung aufbauen
+begin
+	s = nil
+	Timeout::timeout(TIMEOUT_CONNECT) do
+		s = TCPSocket.open(ip, PORT)
+	end
+rescue Timeout::Error
+	puts ERROR[0] + " - connection timeout"
+	STDERR.puts "connection timeout"
+	exit EXIT[:down]
+rescue => errormsg
+	puts ERROR[0] + " - connection refused"
+	STDERR.puts errormsg.inspect
+	exit EXIT[:down]
+end
+
+# Header lesen
+unless read(s) =~ /^. Taddle Chat System 0.1337/
+  puts ERROR[2]+" 2"
+	exit EXIT[:broken]
+end
+puts " CHECK: header okay." if DEBUG
+
+# bis namensprompt lesen
+read_until(s, /^. Hello stranger/)
+
+# namen generieren
+name = rand_name
+send(s, name)
+
+read_until(s, /^. Hello #{name}!/)
+read_until(s, /^. Enter message/)
+
+srand(Time.now.to_i)
+
+if rand(4) < 1
+	text = "Hello buddies!"
+	send(s, text)
+	read_until(s,/^<#{name}> #{text}/)
+end
+
+if cmd == "put"
+	if rand(6) < 1
+		text = "Hm. Got this thing, #{flag}, I wonder where to hide it..."
+		send(s, text)
+		read_until(s,/^<#{name}> #{text}/)
+	end
+
+	send(s, "/private")
+
+	line = read_until(s, /^. You moved to room "([^"]+)"/)
+	room = line.split('"')[1]
+
+	read_until(s, /#{name} has joined #{room}/)
+
+	send(s, "/topic %s" % flag)
+
+	read_until(s, /Topic of #{room} set to #{flag}/)
+
+	puts " CHECK: \"put\" command okay." if DEBUG
+
+	save(ip, flag, room)
+	puts "OK"
+	exit EXIT[:ok]
+
+elsif cmd == "get"
+	room = restore(ip, flag)
+
+	send(s, "/join " + room)
+
+	line = read_until(s, /^. The topic for #{room} is: /)
+
+	topic = line.match(/: (.*)$/)[1]
+	if topic != flag
+		puts ERROR[3]
+		exit EXIT[:broken]
+	end
+
+	delete(ip, flag)
+
+	puts "OK"
+	exit EXIT[:ok]
+end
+
+puts "Something went wrong."
+STDERR.puts "This should not have happened!"
+exit EXIT[:error]
