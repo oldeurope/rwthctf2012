@@ -1,0 +1,17 @@
+#!/bin/bash
+
+if [[ "$#" != 2 ]]; then
+    echo "USAGE: $0 TEMPLATE ID" >&2
+    exit 1
+fi
+
+BASEPORT=10500
+
+TEMPLATE="$1"
+ID="$2"
+PORT="$((${BASEPORT}+${ID}))"
+
+echo "generate for server $ID" >&2
+cat "$TEMPLATE" | \
+sed "s/SERVERID/${ID}/g" | \
+sed "s/SERVERPORT/${PORT}/g"
