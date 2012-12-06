@@ -30,3 +30,8 @@ mongodb queries:
 Possible next steps
 -------------------
  - Use capped collections in mongodb
+
+Screenshot
+----------
+
+https://pbs.twimg.com/media/A89OPUYCYAARe-w.png:large
