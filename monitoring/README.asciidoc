@@ -11,9 +11,9 @@ Stab at real-time monitoring of system parameters using Cubism.js
 Install
 -------
 1. npm install cube
-2. node collector
+2. node collector/collector
 3. cd evaluator; node evaluator
-4. node emitter
+4. node emitter/emitter
 
 You'll have to adjust IPs/hostnames in these scripts. Simply copy the emitter
 to hosts you want to monitor. With the evaluator running, you can visit
